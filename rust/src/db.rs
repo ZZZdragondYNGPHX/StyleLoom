@@ -5,8 +5,8 @@ use crate::models::{
 };
 use crate::prompt_ast::{nodes_to_editable_raw, parse_raw_to_nodes, render_for_copy};
 use chrono::Utc;
-use rusqlite::{params, Connection, OptionalExtension};
-use std::collections::HashSet;
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use uuid::Uuid;
@@ -505,6 +505,31 @@ impl VaultDb {
 
     pub fn upsert_recipe_raw(&self, recipe: &StyleRecipe) -> CoreResult<()> {
         let transaction = self.conn.unchecked_transaction()?;
+        self.write_recipe(recipe)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub(crate) fn apply_synced_recipes(
+        &self,
+        previous: &HashMap<String, StyleRecipe>,
+        merged: &HashMap<String, StyleRecipe>,
+    ) -> CoreResult<()> {
+        let transaction = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        for (id, recipe) in merged {
+            let old = previous.get(id);
+            if self.get_recipe(id)?.as_ref() != old {
+                return Err(CoreError::Sync("同步期间卡片有更新，请重新同步".into()));
+            }
+            if Some(recipe) != old {
+                self.write_recipe(recipe)?;
+            }
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    fn write_recipe(&self, recipe: &StyleRecipe) -> CoreResult<()> {
         self.conn.execute(
             "
             INSERT INTO recipes (
@@ -552,9 +577,7 @@ impl VaultDb {
                 if recipe.deleted { 1 } else { 0 }
             ],
         )?;
-        self.refresh_recipe_fts(recipe)?;
-        transaction.commit()?;
-        Ok(())
+        self.refresh_recipe_fts(recipe)
     }
 
     pub fn save_recipe(&self, mut recipe: StyleRecipe) -> CoreResult<StyleRecipe> {

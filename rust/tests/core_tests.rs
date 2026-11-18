@@ -987,8 +987,8 @@ fn test_webdav_missing_corrupt_images_and_concurrent_snapshot_changes_fail() {
     };
     let a = TempVault::new("failure_a");
     let db_a = VaultDb::open(&a.path).unwrap();
-    let asset = media::import_image_bytes(&a.path, &make_png_with_text(&[], 8, 8)).unwrap();
-    db_a.upsert_image_asset(&asset).unwrap();
+    let original = make_png_with_text(&[], 8, 8);
+    let asset = media::import_image_bytes(&a.path, &original).unwrap();
     let mut recipe = regression_recipe("images");
     recipe.images.push(RecipeImageRef {
         sha256: asset.sha256.clone(),
@@ -1011,6 +1011,7 @@ fn test_webdav_missing_corrupt_images_and_concurrent_snapshot_changes_fail() {
         .unwrap_err()
         .to_string()
         .contains("404"));
+    assert!(db_b.get_recipe("images").unwrap().is_none());
     assert!(db_b
         .get_setting(&format!(
             "webdav_last_sync:{}{root}",
@@ -1022,11 +1023,27 @@ fn test_webdav_missing_corrupt_images_and_concurrent_snapshot_changes_fail() {
         .lock()
         .unwrap()
         .files
-        .insert(blob_path, b"corrupt".to_vec());
+        .insert(blob_path.clone(), b"corrupt".to_vec());
     assert!(sync::sync_webdav(&db_b, &cfg)
         .unwrap_err()
         .to_string()
         .contains("校验"));
+    assert!(db_b.get_recipe("images").unwrap().is_none());
+    state.lock().unwrap().files.remove(&blob_path);
+    assert_eq!(sync::sync_webdav(&db_a, &cfg).unwrap().uploaded_blobs, 1);
+    assert_eq!(sync::sync_webdav(&db_b, &cfg).unwrap().downloaded_blobs, 1);
+    let received = db_b.get_recipe("images").unwrap().unwrap();
+    let image = &received.images[0];
+    let blob = b.path.join(&image.blob_rel_path);
+    let thumb = b.path.join(&image.thumb_rel_path);
+    assert_eq!(std::fs::read(&blob).unwrap(), original);
+    assert!(image::open(&thumb).is_ok());
+    std::fs::write(&thumb, []).unwrap();
+    assert_eq!(sync::sync_webdav(&db_b, &cfg).unwrap().downloaded_blobs, 0);
+    assert!(image::open(&thumb).is_ok());
+    std::fs::write(&blob, b"partial").unwrap();
+    assert_eq!(sync::sync_webdav(&db_b, &cfg).unwrap().downloaded_blobs, 1);
+    assert_eq!(std::fs::read(&blob).unwrap(), original);
     let snapshot = state.lock().unwrap().files[&snapshot_path].clone();
     state.lock().unwrap().reject_snapshot_put = true;
     assert!(sync::sync_webdav(&db_a, &cfg)
@@ -1034,4 +1051,62 @@ fn test_webdav_missing_corrupt_images_and_concurrent_snapshot_changes_fail() {
         .to_string()
         .contains("412"));
     assert_eq!(state.lock().unwrap().files[&snapshot_path], snapshot);
+}
+
+#[test]
+fn test_webdav_roundtrip_jpg_png_and_webp_in_both_directions() {
+    let (endpoint, _) = spawn_mock_webdav("Basic dXNlcjpwYXNz".into());
+    let cfg = WebDavConfig {
+        preset: "custom".into(),
+        endpoint_url: endpoint,
+        username: "user".into(),
+        password: "pass".into(),
+        remote_dir: "/StyleLoom".into(),
+    };
+    let a = TempVault::new("formats_a");
+    let b = TempVault::new("formats_b");
+    let db_a = VaultDb::open(&a.path).unwrap();
+    let db_b = VaultDb::open(&b.path).unwrap();
+    for (sender, receiver, color) in [(&db_a, &db_b, 25), (&db_b, &db_a, 75)] {
+        let mut recipe = regression_recipe(&format!("formats_{color}"));
+        let mut images = Vec::new();
+        for (format, ext) in [
+            (image::ImageFormat::Jpeg, "jpg"),
+            (image::ImageFormat::Png, "png"),
+            (image::ImageFormat::WebP, "webp"),
+        ] {
+            let mut bytes = std::io::Cursor::new(Vec::new());
+            image::RgbImage::from_pixel(16, 12, image::Rgb([color, 60, 100]))
+                .write_to(&mut bytes, format)
+                .unwrap();
+            let bytes = bytes.into_inner();
+            let asset = media::import_image_bytes(&sender.vault_dir, &bytes).unwrap();
+            sender.upsert_image_asset(&asset).unwrap();
+            assert_eq!(asset.ext, ext);
+            recipe.images.push(RecipeImageRef {
+                sha256: asset.sha256,
+                ext: asset.ext,
+                width: asset.width,
+                height: asset.height,
+                blob_rel_path: asset.blob_rel_path,
+                thumb_rel_path: asset.thumb_rel_path,
+                caption: String::new(),
+            });
+            images.push(bytes);
+        }
+        let saved = sender.save_recipe(recipe).unwrap();
+        assert_eq!(sync::sync_webdav(sender, &cfg).unwrap().uploaded_blobs, 3);
+        assert_eq!(
+            sync::sync_webdav(receiver, &cfg).unwrap().downloaded_blobs,
+            3
+        );
+        let received = receiver.get_recipe(&saved.id).unwrap().unwrap();
+        for (image, original) in received.images.iter().zip(images) {
+            assert_eq!(
+                std::fs::read(receiver.vault_dir.join(&image.blob_rel_path)).unwrap(),
+                original
+            );
+            assert!(image::open(receiver.vault_dir.join(&image.thumb_rel_path)).is_ok());
+        }
+    }
 }

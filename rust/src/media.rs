@@ -13,14 +13,12 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(hasher.finalize())
 }
 
-fn format_ext(fmt: ImageFormat) -> &'static str {
+fn format_ext(fmt: ImageFormat) -> Option<&'static str> {
     match fmt {
-        ImageFormat::Png => "png",
-        ImageFormat::Jpeg => "jpg",
-        ImageFormat::WebP => "webp",
-        ImageFormat::Gif => "gif",
-        ImageFormat::Bmp => "bmp",
-        _ => "png",
+        ImageFormat::Png => Some("png"),
+        ImageFormat::Jpeg => Some("jpg"),
+        ImageFormat::WebP => Some("webp"),
+        _ => None,
     }
 }
 
@@ -45,7 +43,9 @@ pub fn import_image_bytes(vault_dir: &Path, bytes: &[u8]) -> CoreResult<ImageAss
     let fmt = reader
         .format()
         .ok_or_else(|| CoreError::Parse("Unsupported image format".into()))?;
-    let ext = format_ext(fmt).to_string();
+    let ext = format_ext(fmt)
+        .ok_or_else(|| CoreError::InvalidInput("预览图支持 JPG、PNG 和 WebP".into()))?
+        .to_string();
 
     let decoded = reader
         .decode()
@@ -61,7 +61,8 @@ pub fn import_image_bytes(vault_dir: &Path, bytes: &[u8]) -> CoreResult<ImageAss
     if let Some(parent) = blob_abs.parent() {
         fs::create_dir_all(parent)?;
     }
-    if !blob_abs.exists() {
+    let replace_blob = fs::read(&blob_abs).ok().as_deref() != Some(bytes);
+    if replace_blob {
         fs::write(&blob_abs, bytes)?;
     }
 
@@ -72,7 +73,7 @@ pub fn import_image_bytes(vault_dir: &Path, bytes: &[u8]) -> CoreResult<ImageAss
     };
     let thumb_rel = format!("thumbs/{prefix}/{sha}.{thumb_ext}");
     let thumb_abs = vault_dir.join(&thumb_rel);
-    if !thumb_abs.exists() {
+    if replace_blob || !fs::metadata(&thumb_abs).is_ok_and(|m| m.is_file() && m.len() > 0) {
         if let Some(parent) = thumb_abs.parent() {
             fs::create_dir_all(parent)?;
         }

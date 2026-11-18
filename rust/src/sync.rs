@@ -570,26 +570,7 @@ pub fn sync_webdav(db: &VaultDb, cfg: &WebDavConfig) -> CoreResult<SyncReport> {
 
     let mut report = SyncReport::default();
 
-    // 3. Upload local image blobs missing on remote
-    let local_assets = db.list_image_assets()?;
-    for asset in &local_assets {
-        let filename = format!("{}.{}", asset.sha256, asset.ext);
-        if !remote_blobs.contains(&filename) {
-            let abs = db.vault_dir.join(&asset.blob_rel_path);
-            if abs.exists() {
-                let bytes = std::fs::read(&abs)?;
-                agent
-                    .put(&format!("{blobs_url}/{filename}"))
-                    .set("Authorization", &auth)
-                    .set("Content-Type", "application/octet-stream")
-                    .send_bytes(&bytes)
-                    .map_err(|e| map_ureq_err(e, is_koofr))?;
-                report.uploaded_blobs += 1;
-            }
-        }
-    }
-
-    // 4. Merge schemas, snippets, recipes
+    // Merge recipe records in memory until their images are ready.
     let local_schemas: HashMap<String, PlatformSchema> = db
         .list_schemas(true)?
         .into_iter()
@@ -687,7 +668,6 @@ pub fn sync_webdav(db: &VaultDb, cfg: &WebDavConfig) -> CoreResult<SyncReport> {
         for rr in rsnap.recipes {
             match local_recipes.get(&rr.id) {
                 None => {
-                    db.upsert_recipe_raw(&rr)?;
                     merged_recipes.insert(rr.id.clone(), rr);
                     report.pulled_recipes += 1;
                 }
@@ -706,12 +686,10 @@ pub fn sync_webdav(db: &VaultDb, cfg: &WebDavConfig) -> CoreResult<SyncReport> {
                         conflict.id = Uuid::new_v4().to_string();
                         conflict.title = format!("{} (冲突副本)", conflict.title);
                         conflict.updated_at = Utc::now().timestamp_millis();
-                        db.upsert_recipe_raw(&conflict)?;
                         merged_recipes.insert(conflict.id.clone(), conflict);
                         report.conflict_copies += 1;
                     }
                     if rr.updated_at >= lr.updated_at {
-                        db.upsert_recipe_raw(&rr)?;
                         merged_recipes.insert(rr.id.clone(), rr);
                         report.pulled_recipes += 1;
                     } else {
@@ -727,55 +705,82 @@ pub fn sync_webdav(db: &VaultDb, cfg: &WebDavConfig) -> CoreResult<SyncReport> {
         report.pushed_recipes = merged_recipes.len();
     }
 
-    // 5. Download missing blobs referenced by active merged recipes
-    let local_sha_set: HashSet<String> = db
+    let mut asset_map: HashMap<_, _> = db
         .list_image_assets()?
         .into_iter()
-        .filter(|a| {
-            db.vault_dir.join(&a.blob_rel_path).is_file()
-                && db.vault_dir.join(&a.thumb_rel_path).is_file()
-        })
-        .map(|a| a.sha256)
+        .map(|asset| (asset.sha256.clone(), asset))
         .collect();
-    let mut downloaded_set = HashSet::new();
-    for recipe in merged_recipes.values() {
-        if recipe.deleted {
-            continue;
-        }
-        for img in &recipe.images {
-            if !local_sha_set.contains(&img.sha256) && downloaded_set.insert(img.sha256.clone()) {
-                let filename = format!("{}.{}", img.sha256, img.ext);
-                let resp = agent
-                    .get(&format!("{blobs_url}/{filename}"))
-                    .set("Authorization", &auth)
-                    .call()
-                    .map_err(|e| map_ureq_err(e, is_koofr))?;
+    let mut synced_images = HashSet::new();
+    for recipe in merged_recipes.values().filter(|recipe| !recipe.deleted) {
+        for image in &recipe.images {
+            validate_image_paths(
+                &image.sha256,
+                &image.ext,
+                &image.blob_rel_path,
+                &image.thumb_rel_path,
+            )?;
+            if !synced_images.insert(image.sha256.clone()) {
+                continue;
+            }
+            let filename = format!("{}.{}", image.sha256, image.ext);
+            let url = format!("{blobs_url}/{filename}");
+            let exists_remote = remote_blobs.contains(&filename);
+            let local_ready = asset_map.get(&image.sha256).is_some_and(|asset| {
+                asset.ext == image.ext && local_image_ready(&db.vault_dir, asset)
+            });
+            if exists_remote && local_ready {
+                continue;
+            }
+
+            let local_bytes = std::fs::read(db.vault_dir.join(&image.blob_rel_path))
+                .ok()
+                .filter(|bytes| media::sha256_hex(bytes) == image.sha256);
+            let bytes = if let Some(bytes) = local_bytes {
+                if !exists_remote {
+                    agent
+                        .put(&url)
+                        .set("Authorization", &auth)
+                        .set("Content-Type", "application/octet-stream")
+                        .send_bytes(&bytes)
+                        .map_err(|e| map_ureq_err(e, is_koofr))?;
+                    report.uploaded_blobs += 1;
+                }
+                bytes
+            } else {
+                let resp = match agent.get(&url).set("Authorization", &auth).call() {
+                    Ok(resp) => resp,
+                    Err(ureq::Error::Status(404, _)) => {
+                        return Err(CoreError::Sync(format!(
+                            "WebDAV 找不到卡片原图（HTTP 404）：{filename}"
+                        )));
+                    }
+                    Err(err) => return Err(map_ureq_err(err, is_koofr)),
+                };
                 let bytes = read_limited(resp.into_reader(), 256 * 1024 * 1024)?;
-                if media::sha256_hex(&bytes) != img.sha256 {
+                if media::sha256_hex(&bytes) != image.sha256 {
                     return Err(CoreError::Sync(format!("远端图片校验失败：{filename}")));
                 }
-                let asset = media::import_image_bytes(&db.vault_dir, &bytes)?;
-                db.upsert_image_asset(&asset)?;
                 report.downloaded_blobs += 1;
+                bytes
+            };
+            if !local_ready {
+                let asset = media::import_image_bytes(&db.vault_dir, &bytes)?;
+                if asset.ext != image.ext {
+                    return Err(CoreError::Sync(format!(
+                        "卡片原图格式与记录不一致：{filename}"
+                    )));
+                }
+                db.upsert_image_asset(&asset)?;
+                asset_map.insert(asset.sha256.clone(), asset);
             }
         }
     }
 
-    // 6. Push merged snapshot back to WebDAV
-    let final_assets = db.list_image_assets()?;
-    let asset_map: HashMap<_, _> = final_assets
-        .iter()
-        .map(|a| (a.sha256.clone(), a.clone()))
-        .collect();
+    // Publish only after all referenced images are available.
     for recipe in merged_recipes.values_mut() {
-        if let Some(latest) = db.get_recipe(&recipe.id)? {
-            if latest.updated_at > recipe.updated_at {
-                *recipe = latest;
-            }
-        }
         normalize_recipe_images(recipe, &asset_map);
-        db.upsert_recipe_raw(recipe)?;
     }
+    db.apply_synced_recipes(&local_recipes, &merged_recipes)?;
     let now = Utc::now().timestamp_millis();
     let final_snap = SyncSnapshot {
         format_version: 1,
@@ -783,7 +788,10 @@ pub fn sync_webdav(db: &VaultDb, cfg: &WebDavConfig) -> CoreResult<SyncReport> {
         schemas: merged_schemas.into_values().collect(),
         snippets: merged_snippets.into_values().collect(),
         recipes: merged_recipes.into_values().collect(),
-        assets: final_assets,
+        assets: asset_map
+            .into_values()
+            .filter(|asset| synced_images.contains(&asset.sha256))
+            .collect(),
     };
     let json_bytes = serde_json::to_vec(&final_snap)?;
     let mut enc = GzEncoder::new(Vec::new(), Compression::default());
@@ -814,6 +822,15 @@ pub fn sync_webdav(db: &VaultDb, cfg: &WebDavConfig) -> CoreResult<SyncReport> {
         report.conflict_copies
     );
     Ok(report)
+}
+
+fn local_image_ready(vault_dir: &Path, asset: &ImageAsset) -> bool {
+    let intact = |relative: &str, length: Option<u64>| {
+        std::fs::metadata(vault_dir.join(relative)).is_ok_and(|meta| {
+            meta.is_file() && meta.len() > 0 && length.is_none_or(|expected| meta.len() == expected)
+        })
+    };
+    intact(&asset.blob_rel_path, Some(asset.byte_size)) && intact(&asset.thumb_rel_path, None)
 }
 
 fn normalize_recipe_images(recipe: &mut StyleRecipe, assets: &HashMap<String, ImageAsset>) {
