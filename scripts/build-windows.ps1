@@ -5,10 +5,7 @@ $RustDir = Join-Path $RootDir "rust"
 $AppDir  = Join-Path $RootDir "app"
 $DistDir = Join-Path $RootDir "dist\StyleLoom-windows-x64"
 
-Write-Host "[1/4] Checking Windows build prerequisites..." -ForegroundColor Cyan
-& (Join-Path $PSScriptRoot "check-windows-env.ps1")
-
-Write-Host "[2/4] Building Rust core (styleloom_core.dll)..." -ForegroundColor Cyan
+Write-Host "[1/3] Building Rust core (styleloom_core.dll)..." -ForegroundColor Cyan
 Push-Location $RustDir
 try {
     cargo build --locked --release
@@ -17,7 +14,7 @@ try {
     Pop-Location
 }
 
-Write-Host "[3/4] Building Flutter Windows Release..." -ForegroundColor Cyan
+Write-Host "[2/3] Building Flutter Windows Release..." -ForegroundColor Cyan
 Push-Location $AppDir
 try {
     flutter pub get
@@ -28,7 +25,7 @@ try {
     Pop-Location
 }
 
-Write-Host "[4/4] Staging portable Windows bundle to $DistDir..." -ForegroundColor Cyan
+Write-Host "[3/3] Staging portable Windows bundle to $DistDir..." -ForegroundColor Cyan
 $BuildOut = Join-Path $AppDir "build\windows\x64\runner\Release"
 if (-not (Test-Path $BuildOut)) {
     $BuildOut = Join-Path $AppDir "build\windows\runner\Release"
