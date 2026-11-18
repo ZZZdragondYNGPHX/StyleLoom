@@ -21,11 +21,18 @@ class StyleLoomApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'StyleLoom',
-      debugShowCheckedModeBanner: false,
-      theme: StyleLoomTheme.dark(),
-      home: WorkspaceShell(controller: controller),
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'StyleLoom',
+          debugShowCheckedModeBanner: false,
+          theme: StyleLoomTheme.light(),
+          darkTheme: StyleLoomTheme.night(),
+          themeMode: controller.isNightMode ? ThemeMode.dark : ThemeMode.light,
+          home: WorkspaceShell(controller: controller),
+        );
+      },
     );
   }
 }

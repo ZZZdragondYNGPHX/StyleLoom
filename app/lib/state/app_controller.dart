@@ -12,6 +12,7 @@ class AppController extends ChangeNotifier {
   bool loading = false;
   String? errorMessage;
   int _recipeRequest = 0;
+  Future<void> _preferenceWrite = Future.value();
   bool _disposed = false;
 
   @override
@@ -43,6 +44,7 @@ class AppController extends ChangeNotifier {
   String? filterSchemaId;
   String? filterTag;
   bool favoriteOnly = false;
+  bool isNightMode = false;
   int desktopColumns = 4;
   int mobileColumns = 2;
 
@@ -68,12 +70,16 @@ class AppController extends ChangeNotifier {
       if (savedCols is Map) {
         desktopColumns = ((savedCols['desktop'] as num?)?.toInt() ?? 4).clamp(
           2,
-          8,
+          6,
         );
         mobileColumns = ((savedCols['mobile'] as num?)?.toInt() ?? 2).clamp(
           1,
           4,
         );
+      }
+      final savedNight = await client.getSetting('editorial_night_mode');
+      if (savedNight is bool) {
+        isNightMode = savedNight;
       }
       initialized = true;
     } catch (e) {
@@ -244,13 +250,31 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> setColumns({int? desktop, int? mobile}) async {
-    if (desktop != null) desktopColumns = desktop.clamp(2, 8);
+    if (desktop != null) desktopColumns = desktop.clamp(2, 6);
     if (mobile != null) mobileColumns = mobile.clamp(1, 4);
     notifyListeners();
-    await client.setSetting('grid_columns', {
+    await _persistPreference('grid_columns', {
       'desktop': desktopColumns,
       'mobile': mobileColumns,
     });
+  }
+
+  Future<void> toggleNightMode() async {
+    isNightMode = !isNightMode;
+    notifyListeners();
+    await _persistPreference('editorial_night_mode', isNightMode);
+  }
+
+  Future<void> _persistPreference(String key, Object value) {
+    _preferenceWrite = _preferenceWrite.then((_) async {
+      try {
+        await client.setSetting(key, value);
+      } catch (e) {
+        errorMessage = '保存显示设置失败：$e';
+        notifyListeners();
+      }
+    });
+    return _preferenceWrite;
   }
 
   Future<StyleRecipe> saveRecipe(StyleRecipe recipe) async {

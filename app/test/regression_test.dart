@@ -95,6 +95,75 @@ void main() {
     },
   );
 
+  testWidgets('resizing the editor keeps the unsaved draft', (tester) async {
+    final controller = AppController(client: DelayedClient())
+      ..initialized = true;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1280, 820);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(StyleLoomApp(controller: controller));
+    controller.openNewRecipeDraft();
+    await tester.pumpAndSettle();
+    final title = find.widgetWithText(TextField, '画师串预设名称');
+    await tester.enterText(title, '未保存草稿');
+    for (final width in [410.0, 1100.0]) {
+      tester.view.physicalSize = Size(width, 820);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(title).controller!.text, '未保存草稿');
+      expect(find.byType(RecipeDetailPanel), findsOneWidget);
+    }
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(controller.selectedRecipe, isNull);
+  });
+
+  testWidgets('capsule drag only reorders its own prompt', (tester) async {
+    final client = DelayedClient();
+    final changes = <String, List<String>>{};
+    Widget editor(String label, List<String> ids) => PromptCapsuleEditor(
+      label: label,
+      client: client,
+      nodes: [for (final id in ids) TokenNode(id: id, text: id)],
+      rawText: ids.join(', '),
+      modelSyntax: PromptSyntax.sdParens,
+      availableSnippets: const [],
+      onChanged: (nodes, _) => changes[label] = [for (final n in nodes) n.id],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              editor('positive', ['one', 'two']),
+              editor('negative', ['three']),
+            ],
+          ),
+        ),
+      ),
+    );
+    Future<void> drag(String source, String target) async {
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text(source)),
+      );
+      await gesture.moveBy(const Offset(0, 22));
+      await tester.pump();
+      await gesture.moveTo(tester.getCenter(find.text(target)));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    await drag('two', 'three');
+    expect(changes, isEmpty);
+    await drag('two', 'one');
+    expect(changes, {
+      'positive': ['two', 'one'],
+    });
+    client.renders.single.complete('two, one');
+    await tester.pump();
+  });
+
   testWidgets(
     'repeated weight changes and late serialization preserve the latest edit',
     (tester) async {
@@ -121,6 +190,9 @@ void main() {
           ),
         ),
       );
+      await tester.tap(find.text('cat'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('权重 -0.05').hitTestable(), findsOneWidget);
       await tester.tap(find.byTooltip('权重 +0.05'));
       await tester.tap(find.byTooltip('权重 +0.05'));
       expect(nodes.single.weight, 1.1);
@@ -130,6 +202,9 @@ void main() {
       await tester.pump();
       expect(raw, '(cat:1.1)');
       expect(nodes.single.weight, 1.1);
+      // Tapping outside dismisses the floating popover, then tapping '源码' enters raw mode
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('源码'));
       client.renders[2].complete('(cat:1.1)');
       await tester.pumpAndSettle();

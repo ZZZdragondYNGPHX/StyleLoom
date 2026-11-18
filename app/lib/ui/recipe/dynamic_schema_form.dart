@@ -30,7 +30,7 @@ class DynamicSchemaForm extends StatelessWidget {
             ? values[field.key]
             : field.defaultValue;
         return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.only(bottom: 12),
           child: _buildField(context, field, cur),
         );
       }).toList(),
@@ -42,9 +42,10 @@ class DynamicSchemaForm extends StatelessWidget {
     ParamFieldDef field,
     dynamic currentValue,
   ) {
+    final c = EditorialColors.of(context);
     switch (field.fieldType) {
       case ParamFieldType.slider:
-        return _SliderRow(
+        return _EditorialSafeBandSlider(
           field: field,
           value:
               _asDouble(currentValue) ??
@@ -65,100 +66,188 @@ class DynamicSchemaForm extends StatelessWidget {
       case ParamFieldType.select:
         final strVal = '$currentValue';
         final opts = {strVal, ...field.options}.toList();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _FieldHeader(field: field),
-            const SizedBox(height: 6),
-            DropdownButtonFormField<String>(
-              key: ValueKey('${schema.id}_${field.key}_$strVal'),
-              initialValue: strVal,
-              isExpanded: true,
-              items: opts
-                  .map(
-                    (o) => DropdownMenuItem(
-                      value: o,
-                      child: Text(o, style: const TextStyle(fontSize: 13)),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) _updateKey(field.key, v);
-              },
-            ),
-          ],
+        return _ParamBox(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FieldHeader(field: field),
+              const SizedBox(height: 8),
+              if (opts.length <= 5)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: opts.map((opt) {
+                    final active = strVal == opt;
+                    return InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () => _updateKey(field.key, opt),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 140),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: active ? c.accent : c.surface,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          opt,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: active
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: active ? const Color(0xFFFFFEFA) : c.muted,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                )
+              else
+                DropdownButtonFormField<String>(
+                  key: ValueKey('${schema.id}_${field.key}_$strVal'),
+                  initialValue: strVal,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: c.surface,
+                  ),
+                  items: opts
+                      .map(
+                        (o) => DropdownMenuItem(
+                          value: o,
+                          child: Text(o, style: const TextStyle(fontSize: 13)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) _updateKey(field.key, v);
+                  },
+                ),
+            ],
+          ),
         );
       case ParamFieldType.toggle:
         final b = currentValue == true;
-        return Material(
-          color: StyleLoomTheme.surfaceHigh,
-          shape: RoundedRectangleBorder(
+        return _ParamBox(
+          child: InkWell(
             borderRadius: BorderRadius.circular(10),
-            side: const BorderSide(color: StyleLoomTheme.border),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: SwitchListTile.adaptive(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-            title: Text(field.label, style: const TextStyle(fontSize: 13)),
-            subtitle: field.hint != null
-                ? Text(
-                    field.hint!,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: StyleLoomTheme.textSecondary,
-                    ),
-                  )
-                : null,
-            value: b,
-            onChanged: (v) => _updateKey(field.key, v),
+            onTap: () => _updateKey(field.key, !b),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        field.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: c.ink,
+                        ),
+                      ),
+                      if (field.hint != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          field.hint!,
+                          style: TextStyle(fontSize: 11, color: c.muted),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _EditorialSwitch(
+                  value: b,
+                  onChanged: (v) => _updateKey(field.key, v),
+                ),
+              ],
+            ),
           ),
         );
       case ParamFieldType.resolution:
         final resStr = '$currentValue';
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _FieldHeader(field: field),
-            const SizedBox(height: 6),
-            if (field.resolutionPresets.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: field.resolutionPresets.map((preset) {
-                    return ChoiceChip(
-                      label: Text(preset, style: const TextStyle(fontSize: 11)),
-                      selected: resStr == preset,
-                      onSelected: (_) => _updateKey(field.key, preset),
-                    );
-                  }).toList(),
+        return _ParamBox(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FieldHeader(field: field),
+              const SizedBox(height: 8),
+              if (field.resolutionPresets.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: field.resolutionPresets.map((preset) {
+                      final active = resStr == preset;
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(999),
+                        onTap: () => _updateKey(field.key, preset),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 11,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: active ? c.accent : c.surface,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            preset,
+                            style: StyleLoomTheme.monoStyle(
+                              fontSize: 11.5,
+                              fontWeight: active
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: active
+                                  ? const Color(0xFFFFFEFA)
+                                  : c.muted,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
+              _ParamTextField(
+                key: ValueKey('${schema.id}_${field.key}_resolution'),
+                value: resStr,
+                style: StyleLoomTheme.monoStyle(fontSize: 13, color: c.ink),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: c.surface,
+                  hintText: '例如 832x1216',
+                ),
+                onChanged: (v) => _updateKey(field.key, v),
               ),
-            _ParamTextField(
-              key: ValueKey('${schema.id}_${field.key}_resolution'),
-              value: resStr,
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(hintText: '例如 832x1216'),
-              onChanged: (v) => _updateKey(field.key, v),
-            ),
-          ],
+            ],
+          ),
         );
       case ParamFieldType.text:
         final txt = currentValue?.toString() ?? '';
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _FieldHeader(field: field),
-            const SizedBox(height: 6),
-            _ParamTextField(
-              key: ValueKey('${schema.id}_${field.key}_text'),
-              value: txt,
-              style: const TextStyle(fontSize: 13),
-              decoration: InputDecoration(hintText: field.hint ?? '输入备注或触发词…'),
-              onChanged: (v) => _updateKey(field.key, v),
-            ),
-          ],
+        return _ParamBox(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _FieldHeader(field: field),
+              const SizedBox(height: 8),
+              _ParamTextField(
+                key: ValueKey('${schema.id}_${field.key}_text'),
+                value: txt,
+                style: TextStyle(fontSize: 13, color: c.ink),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: c.surface,
+                  hintText: field.hint ?? '输入备注或触发词…',
+                ),
+                onChanged: (v) => _updateKey(field.key, v),
+              ),
+            ],
+          ),
         );
       case ParamFieldType.loraList:
         final rawList = currentValue is List ? currentValue : [];
@@ -172,6 +261,64 @@ class DynamicSchemaForm extends StatelessWidget {
           onChanged: (next) => _updateKey(field.key, next),
         );
     }
+  }
+}
+
+class _ParamBox extends StatelessWidget {
+  const _ParamBox({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = EditorialColors.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+      decoration: BoxDecoration(
+        color: c.trough,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _EditorialSwitch extends StatelessWidget {
+  const _EditorialSwitch({required this.value, required this.onChanged});
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = EditorialColors.of(context);
+    return GestureDetector(
+      onTap: () => onChanged(!value),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 42,
+        height: 24,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: value ? c.celadon : c.troughDeep,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+        child: Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: c.surface,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: c.shadowColor.withValues(alpha: 0.18),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -233,15 +380,16 @@ class _FieldHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = EditorialColors.of(context);
     return Row(
       children: [
         Expanded(
           child: Text(
             field.label,
-            style: const TextStyle(
-              fontSize: 12,
+            style: TextStyle(
+              fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: StyleLoomTheme.textPrimary,
+              color: c.ink,
             ),
           ),
         ),
@@ -251,25 +399,28 @@ class _FieldHeader extends StatelessWidget {
   }
 }
 
-Widget? _buildRecommendBadge(ParamFieldDef field, double val) {
+Widget? _buildRecommendBadge(
+  BuildContext context,
+  ParamFieldDef field,
+  double val,
+) {
   final rMin = field.recommendedMin;
   final rMax = field.recommendedMax;
   if (rMin == null || rMax == null) return null;
+  final c = EditorialColors.of(context);
   final inRange = val >= rMin - 0.001 && val <= rMax + 0.001;
   final label = '推荐 ${_fmtNum(rMin)}–${_fmtNum(rMax)}';
   return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
     decoration: BoxDecoration(
-      color: (inRange ? StyleLoomTheme.teal : StyleLoomTheme.amber).withValues(
-        alpha: 0.16,
-      ),
-      borderRadius: BorderRadius.circular(6),
+      color: inRange ? c.celadonSoft : c.warnSoft,
+      borderRadius: BorderRadius.circular(999),
     ),
     child: Text(
       inRange ? label : '超出$label',
       style: TextStyle(
-        fontSize: 10,
-        color: inRange ? StyleLoomTheme.teal : StyleLoomTheme.amber,
+        fontSize: 10.5,
+        color: inRange ? c.celadon : c.warn,
         fontWeight: FontWeight.w600,
       ),
     ),
@@ -281,8 +432,8 @@ String _fmtNum(double v) {
   return v.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
 }
 
-class _SliderRow extends StatelessWidget {
-  const _SliderRow({
+class _EditorialSafeBandSlider extends StatelessWidget {
+  const _EditorialSafeBandSlider({
     required this.field,
     required this.value,
     required this.onChanged,
@@ -294,19 +445,25 @@ class _SliderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = EditorialColors.of(context);
     final min = field.min ?? 0.0;
     final max = (field.max ?? 10.0) < min ? min : (field.max ?? 10.0);
     final step = (field.step ?? 0.1) > 0 ? (field.step ?? 0.1) : 0.1;
     final clamped = value.clamp(min, max);
     final divisions = ((max - min) / step).round().clamp(1, 500);
+    final span = (max - min) <= 0 ? 1.0 : (max - min);
+    final rMin = field.recommendedMin;
+    final rMax = field.recommendedMax;
+    final hasBand = rMin != null && rMax != null && max > min;
+    final bandLeft = hasBand
+        ? ((rMin.clamp(min, max) - min) / span).clamp(0.0, 1.0)
+        : 0.0;
+    final bandRight = hasBand
+        ? ((rMax.clamp(min, max) - min) / span).clamp(0.0, 1.0)
+        : 0.0;
+    final inRange = !hasBand || (clamped >= rMin - 0.001 && clamped <= rMax + 0.001);
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-      decoration: BoxDecoration(
-        color: StyleLoomTheme.surfaceHigh,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: StyleLoomTheme.border),
-      ),
+    return _ParamBox(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -315,47 +472,154 @@ class _SliderRow extends StatelessWidget {
             badge: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_buildRecommendBadge(field, clamped) case final b?) ...[
+                if (_buildRecommendBadge(context, field, clamped)
+                    case final b?) ...[
                   b,
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                 ],
                 Text(
                   _fmtNum(clamped),
-                  style: const TextStyle(
+                  style: StyleLoomTheme.monoStyle(
                     fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                    color: StyleLoomTheme.accent,
+                    fontSize: 13.5,
+                    color: inRange ? c.ink : c.warn,
                   ),
                 ),
               ],
             ),
           ),
-          Slider(
-            value: clamped,
-            min: min,
-            max: max,
-            divisions: divisions,
-            onChanged: min == max
-                ? null
-                : (v) {
-                    final snapped = (min + ((v - min) / step).round() * step)
-                        .clamp(min, max);
-                    onChanged(double.parse(snapped.toStringAsFixed(3)));
-                  },
-          ),
-          if (field.hint != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                field.hint!,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: StyleLoomTheme.textSecondary,
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 28,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // 底层槽与青瓷安全推荐区间高亮带
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: LayoutBuilder(
+                    builder: (_, box) {
+                      final w = box.maxWidth;
+                      final leftPx = w * bandLeft;
+                      final bandW = (w * (bandRight - bandLeft)).clamp(0.0, w);
+                      return Container(
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: c.troughDeep,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: hasBand
+                            ? Stack(
+                                children: [
+                                  Positioned(
+                                    left: leftPx,
+                                    width: bandW,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: c.celadon.withValues(
+                                          alpha: c.isNight ? 0.52 : 0.42,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          999,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : null,
+                      );
+                    },
+                  ),
                 ),
-              ),
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 6,
+                    activeTrackColor: Colors.transparent,
+                    inactiveTrackColor: Colors.transparent,
+                    thumbColor: c.surface,
+                    overlayColor: c.accentSoft,
+                    thumbShape: _EditorialThumbShape(
+                      ringColor: inRange ? c.accent : c.warn,
+                      fillColor: c.surface,
+                    ),
+                  ),
+                  child: Slider(
+                    value: clamped,
+                    min: min,
+                    max: max,
+                    divisions: divisions,
+                    onChanged: min == max
+                        ? null
+                        : (v) {
+                            final snapped =
+                                (min + ((v - min) / step).round() * step).clamp(
+                                  min,
+                                  max,
+                                );
+                            onChanged(double.parse(snapped.toStringAsFixed(3)));
+                          },
+                  ),
+                ),
+              ],
             ),
+          ),
+          if (field.hint != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              field.hint!,
+              style: TextStyle(fontSize: 11, color: c.muted),
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+class _EditorialThumbShape extends SliderComponentShape {
+  const _EditorialThumbShape({
+    required this.ringColor,
+    required this.fillColor,
+  });
+
+  final Color ringColor;
+  final Color fillColor;
+
+  @override
+  Size getPreferredSize(bool isEnabled, bool isDiscrete) => const Size(16, 16);
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    final canvas = context.canvas;
+    canvas.drawCircle(
+      center + const Offset(0, 1.5),
+      8,
+      Paint()..color = Colors.black.withValues(alpha: 0.16),
+    );
+    canvas.drawCircle(center, 7.5, Paint()..color = fillColor);
+    canvas.drawCircle(
+      center,
+      7.5,
+      Paint()
+        ..color = ringColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
     );
   }
 }
@@ -373,72 +637,75 @@ class _StepperRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = EditorialColors.of(context);
     final min = (field.min ?? 1).toInt();
     final requestedMax = (field.max ?? 100).toInt();
     final max = requestedMax < min ? min : requestedMax;
     final clamped = value.clamp(min, max);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: StyleLoomTheme.surfaceHigh,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: StyleLoomTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return _ParamBox(
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      field.label,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (field.hint != null)
-                      Text(
-                        field.hint!,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: StyleLoomTheme.textSecondary,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              if (_buildRecommendBadge(field, clamped.toDouble())
-                  case final b?) ...[
-                b,
-                const SizedBox(width: 8),
-              ],
-              IconButton(
-                icon: const Icon(Icons.remove_circle_outline_rounded, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: clamped > min ? () => onChanged(clamped - 1) : null,
-              ),
-              SizedBox(
-                width: 34,
-                child: Text(
-                  '$clamped',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  field.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: c.ink,
                   ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline_rounded, size: 20),
-                visualDensity: VisualDensity.compact,
-                onPressed: clamped < max ? () => onChanged(clamped + 1) : null,
-              ),
-            ],
+                if (field.hint != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    field.hint!,
+                    style: TextStyle(fontSize: 11, color: c.muted),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (_buildRecommendBadge(context, field, clamped.toDouble())
+              case final b?) ...[
+            b,
+            const SizedBox(width: 8),
+          ],
+          Container(
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove_rounded, size: 17),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: clamped > min ? () => onChanged(clamped - 1) : null,
+                ),
+                SizedBox(
+                  width: 30,
+                  child: Text(
+                    '$clamped',
+                    textAlign: TextAlign.center,
+                    style: StyleLoomTheme.monoStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13.5,
+                      color: c.ink,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_rounded, size: 17),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: clamped < max ? () => onChanged(clamped + 1) : null,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -459,13 +726,8 @@ class _LoraListEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: StyleLoomTheme.surfaceHigh,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: StyleLoomTheme.border),
-      ),
+    final c = EditorialColors.of(context);
+    return _ParamBox(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -474,48 +736,70 @@ class _LoraListEditor extends StatelessWidget {
               Expanded(
                 child: Text(
                   field.label,
-                  style: const TextStyle(
-                    fontSize: 12,
+                  style: TextStyle(
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
+                    color: c.ink,
                   ),
                 ),
               ),
-              TextButton.icon(
-                onPressed: () {
+              InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () {
                   onChanged([
                     ...loras,
                     {'name': '', 'weight': 0.85},
                   ]);
                 },
-                icon: const Icon(Icons.add_rounded, size: 16),
-                label: const Text('添加 LoRA', style: TextStyle(fontSize: 12)),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: c.surface,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.add_rounded, size: 14, color: c.accent),
+                      const SizedBox(width: 4),
+                      Text(
+                        '添加 LoRA',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: c.accent,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
           if (field.hint != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.only(top: 4, bottom: 6),
               child: Text(
                 field.hint!,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: StyleLoomTheme.textSecondary,
-                ),
+                style: TextStyle(fontSize: 11, color: c.muted),
               ),
             ),
           if (loras.isEmpty)
-            const Text(
-              '未挂载 LoRA',
-              style: TextStyle(
-                fontSize: 12,
-                color: StyleLoomTheme.textSecondary,
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '未挂载 LoRA',
+                style: TextStyle(fontSize: 12, color: c.muted),
               ),
             ),
           ...List.generate(loras.length, (i) {
             final item = loras[i];
             final w = (_asDouble(item['weight']) ?? 1.0).clamp(-2.0, 2.0);
             return Padding(
-              padding: const EdgeInsets.only(top: 6),
+              padding: const EdgeInsets.only(top: 8),
               child: Row(
                 children: [
                   Expanded(
@@ -523,8 +807,12 @@ class _LoraListEditor extends StatelessWidget {
                     child: _ParamTextField(
                       key: ValueKey('lora_${field.key}_$i'),
                       value: item['name']?.toString() ?? '',
-                      style: const TextStyle(fontSize: 12),
-                      decoration: const InputDecoration(hintText: 'LoRA 名称'),
+                      style: TextStyle(fontSize: 12.5, color: c.ink),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: c.surface,
+                        hintText: 'LoRA 名称',
+                      ),
                       onChanged: (v) {
                         final next = loras
                             .map((m) => Map<String, dynamic>.from(m))
@@ -536,7 +824,7 @@ class _LoraListEditor extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   SizedBox(
-                    width: 110,
+                    width: 100,
                     child: Slider(
                       value: w,
                       min: -2.0,
@@ -552,14 +840,21 @@ class _LoraListEditor extends StatelessWidget {
                     ),
                   ),
                   SizedBox(
-                    width: 36,
+                    width: 38,
                     child: Text(
                       w.toStringAsFixed(2),
-                      style: const TextStyle(fontSize: 11),
+                      style: StyleLoomTheme.monoStyle(
+                        fontSize: 11.5,
+                        color: c.ink,
+                      ),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, size: 17),
+                    icon: Icon(
+                      Icons.delete_outline_rounded,
+                      size: 17,
+                      color: c.muted,
+                    ),
                     visualDensity: VisualDensity.compact,
                     onPressed: () {
                       final next = loras

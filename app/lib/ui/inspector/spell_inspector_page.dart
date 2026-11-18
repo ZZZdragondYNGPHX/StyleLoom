@@ -9,9 +9,14 @@ import '../../theme/app_theme.dart';
 import '../widgets/copy_helpers.dart';
 
 class SpellInspectorPage extends StatefulWidget {
-  const SpellInspectorPage({super.key, required this.controller});
+  const SpellInspectorPage({
+    super.key,
+    required this.controller,
+    this.isDesktop = true,
+  });
 
   final AppController controller;
+  final bool isDesktop;
 
   @override
   State<SpellInspectorPage> createState() => _SpellInspectorPageState();
@@ -25,6 +30,7 @@ class _SpellInspectorPageState extends State<SpellInspectorPage> {
   bool _loading = false;
   int _stageIndex = 0;
   int _request = 0;
+  bool _rawExpanded = false;
 
   @override
   void initState() {
@@ -141,338 +147,486 @@ class _SpellInspectorPageState extends State<SpellInspectorPage> {
     }
   }
 
+  Future<void> _createCardFromInspection(
+    InspectionResult res,
+    InspectedStage stage,
+  ) async {
+    final asset = await widget.controller.client.importImageBytes(_previewBytes!);
+    if (!mounted) return;
+    final initParams = <String, dynamic>{};
+    if (stage.steps != null) initParams['steps'] = stage.steps;
+    if (stage.cfg != null) initParams['cfg'] = stage.cfg;
+    if (stage.sampler != null) initParams['sampler'] = stage.sampler;
+    if (stage.scheduler != null) initParams['scheduler'] = stage.scheduler;
+    if (stage.shift != null) initParams['shift'] = stage.shift;
+    widget.controller.openNewRecipeDraft(
+      schemaId: res.suggestedSchemaId ?? 'nai_v5',
+      initialParams: initParams,
+      images: [asset.toRecipeRef()],
+      title: _fileName?.replaceAll(RegExp(r'\.[^.]+$'), '') ?? '',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final c = EditorialColors.of(context);
     final res = _result;
     final stages = res?.stages ?? [];
     final stage = stages.isNotEmpty
         ? stages[_stageIndex.clamp(0, stages.length - 1)]
         : null;
 
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: StyleLoomTheme.border)),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1480),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: widget.isDesktop ? 28 : 14,
           ),
-          child: Row(
+          child: Column(
             children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              // 统一画册页眉
+              Container(
+                padding: EdgeInsets.only(
+                  top: widget.isDesktop ? 10 : 14,
+                  bottom: 18,
+                ),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: c.hairline)),
+                ),
+                child: Wrap(
+                  spacing: 16,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.end,
                   children: [
-                    Text(
-                      '原图与工作流解析查看器（Spell Inspector）',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '画作透镜 · Spell Inspector',
+                            style: StyleLoomTheme.serifStyle(
+                              fontSize: widget.isDesktop ? 26 : 21,
+                              fontWeight: FontWeight.w700,
+                              color: c.ink,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '纯本地读取 PNG（标准块与 stealth_pnginfo LSB 隐写）、WebUI EXIF 与 ComfyUI JSON，分项复制不污染预设库。',
+                            style: TextStyle(fontSize: 13, color: c.muted),
+                          ),
+                        ],
                       ),
                     ),
-                    SizedBox(height: 2),
-                    Text(
-                      '支持 PNG（标准块 + stealth_pnginfo LSB 隐写）、WebUI EXIF 与 ComfyUI JSON；纯展示与分项复制，不自动污染预设库。',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: StyleLoomTheme.textSecondary,
-                      ),
+                    FilledButton.icon(
+                      onPressed: _pickFile,
+                      icon: const Icon(Icons.file_open_rounded, size: 16),
+                      label: const Text('选择图片 / JSON'),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 10),
-              FilledButton.icon(
-                onPressed: _pickFile,
-                icon: const Icon(Icons.file_open_rounded, size: 17),
-                label: const Text('选择图片 / JSON'),
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator())
-              : (res == null && _error == null)
-              ? Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 460),
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.biotech_rounded,
-                              size: 46,
-                              color: StyleLoomTheme.teal,
+
+              Expanded(
+                child: _loading
+                    ? Center(
+                        child: CircularProgressIndicator(color: c.accent),
+                      )
+                    : (res == null && _error == null)
+                    ? Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 460),
+                          child: Container(
+                            padding: const EdgeInsets.all(28),
+                            decoration: BoxDecoration(
+                              color: c.surface,
+                              borderRadius: BorderRadius.circular(22),
+                              boxShadow: c.cardShadow,
                             ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              '拖入或选择图片 / ComfyUI JSON',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              '桌面端可直接拖拽文件到此窗口；Android 端可在相册/社交软件点击「分享到 StyleLoom」。',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: StyleLoomTheme.textSecondary,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: _pickFile,
-                              icon: const Icon(Icons.upload_file_rounded),
-                              label: const Text('打开文件解析'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                )
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    if (_error != null)
-                      Card(
-                        color: Colors.redAccent.withValues(alpha: 0.14),
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Text(
-                            '解析提示（$_fileName）：$_error',
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      ),
-                    if (res != null) ...[
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (_previewBytes != null)
-                            Container(
-                              width: 140,
-                              height: 180,
-                              margin: const EdgeInsets.only(right: 14),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: StyleLoomTheme.border,
-                                ),
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Image.memory(
-                                _previewBytes!,
-                                fit: BoxFit.cover,
-                              ),
-                            ),
-                          Expanded(
-                            child: Card(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _fileName ?? '解析结果',
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 6,
-                                      children: [
-                                        Chip(label: Text(res.sourceKind)),
-                                        if (res.width != null &&
-                                            res.height != null)
-                                          Chip(
-                                            label: Text(
-                                              '${res.width}×${res.height}',
-                                            ),
-                                          ),
-                                        if (res.suggestedSchemaId != null)
-                                          Chip(
-                                            label: Text(
-                                              '推荐模板: ${widget.controller.schemaById(res.suggestedSchemaId!)?.modelName ?? res.suggestedSchemaId}',
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    if (_previewBytes != null &&
-                                        stage != null) ...[
-                                      const SizedBox(height: 10),
-                                      OutlinedButton.icon(
-                                        onPressed: () async {
-                                          final asset = await widget
-                                              .controller
-                                              .client
-                                              .importImageBytes(_previewBytes!);
-                                          if (!mounted) return;
-                                          final initParams =
-                                              <String, dynamic>{};
-                                          if (stage.steps != null) {
-                                            initParams['steps'] = stage.steps;
-                                          }
-                                          if (stage.cfg != null) {
-                                            initParams['cfg'] = stage.cfg;
-                                          }
-                                          if (stage.sampler != null) {
-                                            initParams['sampler'] =
-                                                stage.sampler;
-                                          }
-                                          if (stage.scheduler != null) {
-                                            initParams['scheduler'] =
-                                                stage.scheduler;
-                                          }
-                                          if (stage.shift != null) {
-                                            initParams['shift'] = stage.shift;
-                                          }
-                                          widget.controller.openNewRecipeDraft(
-                                            schemaId:
-                                                res.suggestedSchemaId ??
-                                                'nai_v5',
-                                            initialParams: initParams,
-                                            images: [asset.toRecipeRef()],
-                                            title:
-                                                _fileName?.replaceAll(
-                                                  RegExp(r'\.[^.]+$'),
-                                                  '',
-                                                ) ??
-                                                '',
-                                          );
-                                        },
-                                        icon: const Icon(
-                                          Icons.add_photo_alternate_rounded,
-                                          size: 16,
-                                        ),
-                                        label: const Text(
-                                          '以此图作封面 + 带入参数建新卡片（不强制导入脏提示词）',
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (stages.length > 1) ...[
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          children: List.generate(
-                            stages.length,
-                            (i) => ChoiceChip(
-                              label: Text(stages[i].stageName),
-                              selected: _stageIndex == i,
-                              onSelected: (_) =>
-                                  setState(() => _stageIndex = i),
-                            ),
-                          ),
-                        ),
-                      ],
-                      if (stage != null) ...[
-                        const SizedBox(height: 12),
-                        _InspectTextBlock(
-                          title: '正面提示词 (Positive Prompt)',
-                          text: stage.positivePrompt,
-                          onCopySyntax: (t) =>
-                              _copyConverted(stage.positivePrompt, '正面提示词', t),
-                        ),
-                        const SizedBox(height: 10),
-                        _InspectTextBlock(
-                          title: '负面提示词 (Negative Prompt / UC)',
-                          text: stage.negativePrompt,
-                          onCopySyntax: (t) =>
-                              _copyConverted(stage.negativePrompt, '负面提示词', t),
-                        ),
-                        const SizedBox(height: 10),
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Text(
-                                  '生成参数（点击任意项右侧复制）',
-                                  style: TextStyle(
+                                Container(
+                                  width: 54,
+                                  height: 54,
+                                  decoration: BoxDecoration(
+                                    color: c.celadonSoft,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.biotech_rounded,
+                                    size: 28,
+                                    color: c.celadon,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  '拖入或打开原图 / ComfyUI JSON',
+                                  style: StyleLoomTheme.serifStyle(
+                                    fontSize: 18,
                                     fontWeight: FontWeight.w700,
-                                    fontSize: 14,
+                                    color: c.ink,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    if (stage.model != null)
-                                      _ParamCopyChip('模型', stage.model!),
-                                    if (stage.sampler != null)
-                                      _ParamCopyChip('采样器', stage.sampler!),
-                                    if (stage.scheduler != null)
-                                      _ParamCopyChip('调度器', stage.scheduler!),
-                                    if (stage.steps != null)
-                                      _ParamCopyChip('Steps', '${stage.steps}'),
-                                    if (stage.cfg != null)
-                                      _ParamCopyChip('CFG', '${stage.cfg}'),
-                                    if (stage.shift != null)
-                                      _ParamCopyChip(
-                                        'Flow Shift',
-                                        '${stage.shift}',
-                                      ),
-                                    if (stage.size != null)
-                                      _ParamCopyChip('尺寸', stage.size!),
-                                    if (stage.seed != null)
-                                      _ParamCopyChip('Seed', stage.seed!),
-                                    ...stage.loras.map(
-                                      (l) => _ParamCopyChip(
-                                        'LoRA',
-                                        '${l.name} (${l.weight})',
-                                      ),
-                                    ),
-                                    ...stage.extraFields.map(
-                                      (e) => _ParamCopyChip(e.$1, e.$2),
-                                    ),
-                                  ],
+                                Text(
+                                  '桌面端可直接拖拽 PNG / WebP / JSON 至窗口任意位置；Android 端可在相册点击「分享到 StyleLoom」。',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: c.muted,
+                                    height: 1.5,
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                                FilledButton.icon(
+                                  onPressed: _pickFile,
+                                  icon: const Icon(Icons.upload_file_rounded),
+                                  label: const Text('打开文件解析'),
                                 ),
                               ],
                             ),
                           ),
                         ),
-                      ],
-                      const SizedBox(height: 10),
-                      ExpansionTile(
-                        title: const Text(
-                          '原始元数据载荷',
-                          style: TextStyle(fontSize: 13),
+                      )
+                    : ListView(
+                        padding: EdgeInsets.only(
+                          top: 20,
+                          bottom: widget.isDesktop ? 40 : 96,
                         ),
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: SelectableText(
-                              res.rawMetadata,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontFamily: 'monospace',
+                          if (_error != null)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 14),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: c.accentSoft,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Text(
+                                '解析提示（$_fileName）：$_error',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: c.accent,
+                                ),
                               ),
                             ),
-                          ),
+                          if (res != null)
+                            LayoutBuilder(
+                              builder: (_, box) {
+                                final split = box.maxWidth >= 820;
+                                final leftCol = _buildSummaryCard(
+                                  context,
+                                  res,
+                                  stage,
+                                );
+                                final rightCol = _buildDetailsColumn(
+                                  context,
+                                  res,
+                                  stages,
+                                  stage,
+                                );
+                                if (split) {
+                                  return Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      SizedBox(width: 340, child: leftCol),
+                                      const SizedBox(width: 22),
+                                      Expanded(child: rightCol),
+                                    ],
+                                  );
+                                }
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    leftCol,
+                                    const SizedBox(height: 16),
+                                    rightCol,
+                                  ],
+                                );
+                              },
+                            ),
                         ],
                       ),
-                    ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard(
+    BuildContext context,
+    InspectionResult res,
+    InspectedStage? stage,
+  ) {
+    final c = EditorialColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: c.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_previewBytes != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                height: 280,
+                color: c.museumBg,
+                child: Image.memory(_previewBytes!, fit: BoxFit.contain),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+          Text(
+            _fileName ?? '解析结果',
+            style: StyleLoomTheme.serifStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: c.ink,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _MetaPill(label: res.sourceKind, isCeladon: true),
+              if (res.width != null && res.height != null)
+                _MetaPill(label: '${res.width}×${res.height}'),
+              if (res.suggestedSchemaId != null)
+                _MetaPill(
+                  label:
+                      '推荐: ${widget.controller.schemaById(res.suggestedSchemaId!)?.modelName ?? res.suggestedSchemaId}',
+                ),
+            ],
+          ),
+          if (_previewBytes != null && stage != null) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => runActionWithFeedback(
+                context,
+                () => _createCardFromInspection(res, stage),
+              ),
+              icon: const Icon(Icons.add_photo_alternate_rounded, size: 17),
+              label: const Text('带入封面与参数建新卡'),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '仅携带图片与采样参数新建画师串，不会自动导入脏提示词。',
+              style: TextStyle(fontSize: 11.5, color: c.muted),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailsColumn(
+    BuildContext context,
+    InspectionResult res,
+    List<InspectedStage> stages,
+    InspectedStage? stage,
+  ) {
+    final c = EditorialColors.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (stages.length > 1) ...[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: List.generate(stages.length, (i) {
+                final active = _stageIndex == i;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => setState(() => _stageIndex = i),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: active ? c.accent : c.surface,
+                        borderRadius: BorderRadius.circular(999),
+                        boxShadow: active ? null : c.cardShadow,
+                      ),
+                      child: Text(
+                        stages[i].stageName,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: active
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: active ? const Color(0xFFFFFEFA) : c.ink,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+        if (stage != null) ...[
+          _InspectTextBlock(
+            title: '正面提示词 · Positive Prompt',
+            text: stage.positivePrompt,
+            onCopySyntax: (t) =>
+                _copyConverted(stage.positivePrompt, '正面提示词', t),
+          ),
+          const SizedBox(height: 14),
+          _InspectTextBlock(
+            title: '负面提示词 · Negative Prompt / UC',
+            text: stage.negativePrompt,
+            onCopySyntax: (t) =>
+                _copyConverted(stage.negativePrompt, '负面提示词', t),
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: c.cardShadow,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '生成参数矩阵（点击任意磁贴复制）',
+                  style: StyleLoomTheme.serifStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: c.ink,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    if (stage.model != null)
+                      _ParamKvTile('模型 Model', stage.model!),
+                    if (stage.sampler != null)
+                      _ParamKvTile('采样器 Sampler', stage.sampler!),
+                    if (stage.scheduler != null)
+                      _ParamKvTile('调度器 Scheduler', stage.scheduler!),
+                    if (stage.steps != null)
+                      _ParamKvTile('步数 Steps', '${stage.steps}'),
+                    if (stage.cfg != null)
+                      _ParamKvTile('引导 CFG', '${stage.cfg}'),
+                    if (stage.shift != null)
+                      _ParamKvTile('Flow Shift', '${stage.shift}'),
+                    if (stage.size != null) _ParamKvTile('尺寸 Size', stage.size!),
+                    if (stage.seed != null) _ParamKvTile('种子 Seed', stage.seed!),
+                    ...stage.loras.map(
+                      (l) => _ParamKvTile('LoRA', '${l.name} (${l.weight})'),
+                    ),
+                    ...stage.extraFields.map((e) => _ParamKvTile(e.$1, e.$2)),
                   ],
                 ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: c.surface,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: c.cardShadow,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InkWell(
+                onTap: () => setState(() => _rawExpanded = !_rawExpanded),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '原始元数据载荷',
+                        style: StyleLoomTheme.serifStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w700,
+                          color: c.ink,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      _rawExpanded
+                          ? Icons.expand_less_rounded
+                          : Icons.expand_more_rounded,
+                      color: c.muted,
+                    ),
+                  ],
+                ),
+              ),
+              if (_rawExpanded) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: c.trough,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: SelectableText(
+                    res.rawMetadata,
+                    style: StyleLoomTheme.monoStyle(
+                      fontSize: 11.5,
+                      height: 1.5,
+                      color: c.ink,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _MetaPill extends StatelessWidget {
+  const _MetaPill({required this.label, this.isCeladon = false});
+  final String label;
+  final bool isCeladon;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = EditorialColors.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: isCeladon ? c.celadonSoft : c.trough,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11.5,
+          fontWeight: FontWeight.w600,
+          color: isCeladon ? c.celadon : c.ink,
+        ),
+      ),
     );
   }
 }
@@ -490,64 +644,100 @@ class _InspectTextBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                  ),
+    final c = EditorialColors.of(context);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: c.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                title,
+                style: StyleLoomTheme.serifStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: c.ink,
                 ),
-                SyntaxCopyButtons(
-                  label: '',
-                  onCopy: (t) async {
-                    if (t == TargetSyntax.asIs) {
-                      await copyTextWithFeedback(context, text, title);
-                    } else {
-                      await onCopySyntax(t);
-                    }
-                  },
-                ),
-              ],
+              ),
+              SyntaxCopyButtons(
+                label: '',
+                onCopy: (t) async {
+                  if (t == TargetSyntax.asIs) {
+                    await copyTextWithFeedback(context, text, title);
+                  } else {
+                    await onCopySyntax(t);
+                  }
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: c.trough,
+              borderRadius: BorderRadius.circular(12),
             ),
-            const SizedBox(height: 8),
-            SelectableText(
+            child: SelectableText(
               text.isEmpty ? '（空）' : text,
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.45,
-                color: text.isEmpty
-                    ? StyleLoomTheme.textSecondary
-                    : StyleLoomTheme.textPrimary,
+              style: StyleLoomTheme.monoStyle(
+                fontSize: 12.5,
+                height: 1.5,
+                color: text.isEmpty ? c.muted : c.ink,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _ParamCopyChip extends StatelessWidget {
-  const _ParamCopyChip(this.label, this.value);
+class _ParamKvTile extends StatelessWidget {
+  const _ParamKvTile(this.label, this.value);
   final String label;
   final String value;
 
   @override
   Widget build(BuildContext context) {
-    return ActionChip(
-      avatar: const Icon(Icons.copy_rounded, size: 14),
-      label: Text('$label: $value', style: const TextStyle(fontSize: 12)),
-      onPressed: () => copyTextWithFeedback(context, value, label),
+    final c = EditorialColors.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => copyTextWithFeedback(context, value, label),
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 136),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: c.trough,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label, style: TextStyle(fontSize: 11, color: c.muted)),
+            const SizedBox(height: 3),
+            Text(
+              value,
+              style: StyleLoomTheme.monoStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: c.ink,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

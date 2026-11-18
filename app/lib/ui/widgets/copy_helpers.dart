@@ -1,7 +1,8 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../models/core_models.dart';
+import '../../theme/app_theme.dart';
 
 Future<void> runActionWithFeedback(
   BuildContext context,
@@ -51,29 +52,76 @@ class SyntaxCopyButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = EditorialColors.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (compact)
-          IconButton(
-            tooltip: '复制$label',
-            icon: const Icon(Icons.copy_rounded, size: 17),
-            onPressed: () =>
-                runActionWithFeedback(context, () => onCopy(TargetSyntax.asIs)),
-            visualDensity: VisualDensity.compact,
+          Tooltip(
+            message: '复制$label',
+            child: InkWell(
+              borderRadius: BorderRadius.circular(999),
+              onTap: () => runActionWithFeedback(
+                context,
+                () => onCopy(TargetSyntax.asIs),
+              ),
+              child: Container(
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: c.trough,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.copy_rounded, size: 13, color: c.ink),
+                    const SizedBox(width: 4),
+                    Text(
+                      '复制',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: c.ink,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           )
         else
-          FilledButton.tonalIcon(
-            onPressed: () =>
-                runActionWithFeedback(context, () => onCopy(TargetSyntax.asIs)),
-            icon: const Icon(Icons.copy_rounded, size: 15),
-            label: Text('复制$label', style: const TextStyle(fontSize: 12)),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: () => runActionWithFeedback(
+              context,
+              () => onCopy(TargetSyntax.asIs),
+            ),
+            child: Container(
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 11),
+              decoration: BoxDecoration(
+                color: c.accentSoft,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.copy_rounded, size: 13, color: c.accent),
+                  const SizedBox(width: 5),
+                  Text(
+                    label.isEmpty ? '复制' : '复制$label',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: c.accent,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
+        const SizedBox(width: 4),
         PopupMenuButton<TargetSyntax>(
           tooltip: '转换目标权重语法后复制',
           onSelected: (target) =>
@@ -83,26 +131,31 @@ class SyntaxCopyButtons extends StatelessWidget {
               .map(
                 (t) => PopupMenuItem<TargetSyntax>(
                   value: t,
-                  child: Text(t.label, style: const TextStyle(fontSize: 13)),
+                  child: Text(t.label, style: const TextStyle(fontSize: 12.5)),
                 ),
               )
               .toList(),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            margin: const EdgeInsets.only(left: 4),
+            height: 28,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
+              color: c.trough,
+              borderRadius: BorderRadius.circular(999),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.swap_horiz_rounded, size: 15),
-                SizedBox(width: 2),
-                Text('转语法', style: TextStyle(fontSize: 11)),
-                Icon(Icons.arrow_drop_down_rounded, size: 16),
+                Icon(Icons.swap_horiz_rounded, size: 13, color: c.ink),
+                const SizedBox(width: 3),
+                Text(
+                  '转语法',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: c.ink,
+                  ),
+                ),
+                Icon(Icons.arrow_drop_down_rounded, size: 15, color: c.muted),
               ],
             ),
           ),
