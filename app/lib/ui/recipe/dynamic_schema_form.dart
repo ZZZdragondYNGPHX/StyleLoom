@@ -10,11 +10,15 @@ class DynamicSchemaForm extends StatelessWidget {
     required this.schema,
     required this.values,
     required this.onChanged,
+    this.samplingOptions = const {},
+    this.onAddSamplingOption,
   });
 
   final PlatformSchema schema;
   final Map<String, dynamic> values;
   final ValueChanged<Map<String, dynamic>> onChanged;
+  final Map<String, List<String>> samplingOptions;
+  final void Function(String group, String name)? onAddSamplingOption;
 
   void _updateKey(String key, dynamic val) {
     final next = Map<String, dynamic>.from(values);
@@ -67,6 +71,22 @@ class DynamicSchemaForm extends StatelessWidget {
           onChanged: (v) => _updateKey(field.key, v),
         );
       case ParamFieldType.select:
+        if (field.samplingGroup case final group?) {
+          return _SamplingSelector(
+            key: ValueKey((schema.id, field.key)),
+            field: field,
+            value: values[field.key] as String?,
+            extraOptions: samplingOptions[group] ?? const [],
+            onAdd: (name) => onAddSamplingOption?.call(group, name),
+            onChanged: (value) {
+              if (value == null) {
+                onChanged({...values}..remove(field.key));
+              } else {
+                _updateKey(field.key, value);
+              }
+            },
+          );
+        }
         final strVal = '$currentValue';
         final opts = {strVal, ...field.options}.toList();
         return _ParamBox(
@@ -264,6 +284,125 @@ class DynamicSchemaForm extends StatelessWidget {
           onChanged: (next) => _updateKey(field.key, next),
         );
     }
+  }
+}
+
+class _SamplingSelector extends StatefulWidget {
+  const _SamplingSelector({
+    super.key,
+    required this.field,
+    required this.value,
+    required this.extraOptions,
+    required this.onAdd,
+    required this.onChanged,
+  });
+
+  final ParamFieldDef field;
+  final String? value;
+  final List<String> extraOptions;
+  final ValueChanged<String> onAdd;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  State<_SamplingSelector> createState() => _SamplingSelectorState();
+}
+
+class _SamplingSelectorState extends State<_SamplingSelector> {
+  String? _previous;
+
+  Future<void> _add() async {
+    var draft = '';
+    final title = widget.field.samplingGroup == 'sampler' ? '添加采样器' : '添加调度器';
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, refresh) {
+            void submit() {
+              if (draft.isNotEmpty) Navigator.pop(context, draft);
+            }
+
+            return AlertDialog(
+              title: Text(title),
+              content: TextField(
+                autofocus: true,
+                decoration: const InputDecoration(labelText: '名称'),
+                onChanged: (text) => refresh(() => draft = text.trim()),
+                onSubmitted: (_) => submit(),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: draft.isEmpty ? null : submit,
+                  child: const Text('添加'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    if (!mounted || name == null) return;
+    if (!widget.field.options.contains(name)) widget.onAdd(name);
+    widget.onChanged(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final value = widget.value;
+    final options = {...widget.field.options, ...widget.extraOptions, ?value};
+    void toggle(bool enabled) {
+      if (!enabled) {
+        _previous = value;
+        widget.onChanged(null);
+        return;
+      }
+      final initial = _previous ?? widget.field.defaultValue;
+      final name = initial is String && initial.trim().isNotEmpty
+          ? initial
+          : options.firstOrNull;
+      if (name == null) {
+        _add();
+      } else {
+        widget.onChanged(name);
+      }
+    }
+
+    return _ParamBox(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _FieldHeader(
+            field: widget.field,
+            badge: Semantics(
+              label: widget.field.label,
+              child: Switch(value: value != null, onChanged: toggle),
+            ),
+          ),
+          if (value != null)
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final name in options)
+                  ChoiceChip(
+                    label: Text(name),
+                    selected: value == name,
+                    onSelected: (_) => widget.onChanged(name),
+                  ),
+                ActionChip(
+                  avatar: const Icon(Icons.add, size: 16),
+                  label: const Text('自定义'),
+                  onPressed: _add,
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
   }
 }
 

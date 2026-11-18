@@ -81,6 +81,14 @@ class ParamFieldDef {
   final List<String> resolutionPresets;
   final String? hint;
 
+  String? get samplingGroup => fieldType != ParamFieldType.select
+      ? null
+      : switch (key) {
+          'sampler' => 'sampler',
+          'scheduler' || 'noise_schedule' => 'scheduler',
+          _ => null,
+        };
+
   factory ParamFieldDef.fromJson(Map<String, dynamic> j) => ParamFieldDef(
         key: j['key'] as String? ?? '',
         label: j['label'] as String? ?? '',
@@ -161,10 +169,34 @@ class PlatformSchema {
         'deleted': deleted,
       };
 
-  Map<String, dynamic> defaultParams() {
-    final map = <String, dynamic>{};
+  Map<String, dynamic> recipeParams(
+    Map<String, dynamic> source, {
+    bool keepUnknown = true,
+    bool fillDefaults = true,
+  }) {
+    final map = keepUnknown
+        ? Map<String, dynamic>.of(source)
+        : <String, dynamic>{};
     for (final f in fields) {
-      map[f.key] = jsonDecode(jsonEncode(f.defaultValue));
+      var value = source[f.key];
+      if (f.samplingGroup == 'scheduler') {
+        final alias = f.key == 'scheduler' ? 'noise_schedule' : 'scheduler';
+        if (!fields.any((other) => other.key == alias)) {
+          value ??= source[alias];
+          map.remove(alias);
+        }
+      }
+      if (f.samplingGroup != null) {
+        if (value is String && value.trim().isNotEmpty) {
+          map[f.key] = value;
+        } else {
+          map.remove(f.key);
+        }
+      } else if (fillDefaults || source.containsKey(f.key)) {
+        map[f.key] = source.containsKey(f.key)
+            ? value
+            : jsonDecode(jsonEncode(f.defaultValue));
+      }
     }
     return map;
   }

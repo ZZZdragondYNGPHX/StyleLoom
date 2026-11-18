@@ -79,7 +79,11 @@ class _RecipeDetailPanelState extends State<RecipeDetailPanel> {
     _posRaw = r.positiveRaw;
     _negNodes = List.of(r.negativeNodes);
     _negRaw = r.negativeRaw;
-    _params = Map<String, dynamic>.from(r.params);
+    _params =
+        widget.controller
+            .schemaById(_schemaId)
+            ?.recipeParams(r.params, fillDefaults: false) ??
+        Map.of(r.params);
     _tags = List.of(r.tags);
     _images = List.of(r.images);
     _favorite = r.favorite;
@@ -103,12 +107,7 @@ class _RecipeDetailPanelState extends State<RecipeDetailPanel> {
   void _switchSchema(String newSchemaId) {
     final schema = widget.controller.schemaById(newSchemaId);
     if (schema == null) return;
-    final nextParams = schema.defaultParams();
-    for (final entry in _params.entries) {
-      if (nextParams.containsKey(entry.key)) {
-        nextParams[entry.key] = entry.value;
-      }
-    }
+    final nextParams = schema.recipeParams(_params, keepUnknown: false);
     setState(() {
       _schemaId = newSchemaId;
       _params = nextParams;
@@ -1030,6 +1029,8 @@ class _RecipeDetailPanelState extends State<RecipeDetailPanel> {
                 key: ValueKey((widget.recipe.id, widget.recipe.updatedAt, _schemaId)),
                 schema: schema,
                 values: _params,
+                samplingOptions: widget.controller.samplingOptions,
+                onAddSamplingOption: widget.controller.rememberSamplingOption,
                 onChanged: (next) => setState(() => _params = next),
               ),
           ],

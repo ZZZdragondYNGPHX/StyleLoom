@@ -29,6 +29,7 @@ class AppController extends ChangeNotifier {
   List<PlatformSchema> schemas = [];
   List<PromptSnippet> snippets = [];
   List<StyleRecipe> recipes = [];
+  final samplingOptions = <String, List<String>>{};
 
   // Navigation & Drawer
   int activeNavIndex = 0; // 0:瀑布流 1:提示词预设 2:原图解析 3:模型模板 4:同步备份
@@ -59,6 +60,16 @@ class AppController extends ChangeNotifier {
       schemas = await client.initVault();
       snippets = await client.listSnippets();
       recipes = await _fetchFilteredRecipes();
+
+      final options = await client.getSetting('sampling_options');
+      if (options is Map) {
+        for (final group in ['sampler', 'scheduler']) {
+          final names = options[group];
+          if (names is List) {
+            samplingOptions[group] = names.whereType<String>().toList();
+          }
+        }
+      }
 
       final savedDav = await client.getSetting('webdav_config');
       if (savedDav is Map) {
@@ -170,10 +181,9 @@ class AppController extends ChangeNotifier {
   }) {
     final schema =
         schemaById(schemaId) ?? (schemas.isNotEmpty ? schemas.first : null);
-    final mergedParams = schema?.defaultParams() ?? <String, dynamic>{};
-    if (initialParams != null) {
-      mergedParams.addAll(initialParams);
-    }
+    final source = initialParams ?? <String, dynamic>{};
+    final mergedParams =
+        schema?.recipeParams(source) ?? Map<String, dynamic>.of(source);
     creatingNewRecipe = true;
     selectedRecipe = StyleRecipe(
       id: '',
@@ -265,12 +275,20 @@ class AppController extends ChangeNotifier {
     await _persistPreference('editorial_night_mode', isNightMode);
   }
 
+  Future<void> rememberSamplingOption(String group, String name) async {
+    final names = samplingOptions[group] ?? const [];
+    if (names.contains(name)) return;
+    samplingOptions[group] = [...names, name];
+    notifyListeners();
+    await _persistPreference('sampling_options', Map.of(samplingOptions));
+  }
+
   Future<void> _persistPreference(String key, Object value) {
     _preferenceWrite = _preferenceWrite.then((_) async {
       try {
         await client.setSetting(key, value);
       } catch (e) {
-        errorMessage = '保存显示设置失败：$e';
+        errorMessage = '保存设置失败：$e';
         notifyListeners();
       }
     });

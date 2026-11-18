@@ -1,7 +1,7 @@
 use crate::builtin_schemas::builtin_schemas;
 use crate::models::{
-    CoreError, CoreResult, ImageAsset, PlatformSchema, PromptNode, PromptSnippet, PromptSyntax,
-    RecipeFilter, StyleRecipe, TargetSyntax,
+    CoreError, CoreResult, ImageAsset, ParamFieldType, PlatformSchema, PromptNode, PromptSnippet,
+    PromptSyntax, RecipeFilter, StyleRecipe, TargetSyntax,
 };
 use crate::prompt_ast::{nodes_to_editable_raw, parse_raw_to_nodes, render_for_copy};
 use chrono::Utc;
@@ -795,6 +795,27 @@ impl VaultDb {
 
         let mut new_params = serde_json::Map::new();
         for f in &target_schema.fields {
+            if f.field_type == ParamFieldType::Select
+                && matches!(f.key.as_str(), "sampler" | "scheduler" | "noise_schedule")
+            {
+                let alternate_key = match f.key.as_str() {
+                    "scheduler" => Some("noise_schedule"),
+                    "noise_schedule" => Some("scheduler"),
+                    _ => None,
+                };
+                let selected = src.params.get(&f.key).or_else(|| {
+                    alternate_key
+                        .filter(|k| !target_schema.fields.iter().any(|other| other.key == *k))
+                        .and_then(|k| src.params.get(k))
+                });
+                if let Some(name) = selected
+                    .and_then(|value| value.as_str())
+                    .filter(|s| !s.trim().is_empty())
+                {
+                    new_params.insert(f.key.clone(), name.into());
+                }
+                continue;
+            }
             if let Some(existing) = src.params.get(&f.key) {
                 new_params.insert(f.key.clone(), existing.clone());
             } else {
