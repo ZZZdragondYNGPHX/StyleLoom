@@ -1027,6 +1027,7 @@ class _RecipeDetailPanelState extends State<RecipeDetailPanel> {
             const SizedBox(height: 14),
             if (schema != null)
               DynamicSchemaForm(
+                key: ValueKey((widget.recipe.id, widget.recipe.updatedAt, _schemaId)),
                 schema: schema,
                 values: _params,
                 onChanged: (next) => setState(() => _params = next),

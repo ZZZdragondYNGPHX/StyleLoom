@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/core_models.dart';
@@ -47,6 +48,8 @@ class DynamicSchemaForm extends StatelessWidget {
       case ParamFieldType.slider:
         return _EditorialSafeBandSlider(
           field: field,
+          editable: schema.platform == 'NovelAI' &&
+              (field.key == 'cfg' || field.key == 'cfg_rescale'),
           value:
               _asDouble(currentValue) ??
               _asDouble(field.defaultValue) ??
@@ -435,11 +438,13 @@ String _fmtNum(double v) {
 class _EditorialSafeBandSlider extends StatelessWidget {
   const _EditorialSafeBandSlider({
     required this.field,
+    required this.editable,
     required this.value,
     required this.onChanged,
   });
 
   final ParamFieldDef field;
+  final bool editable;
   final double value;
   final ValueChanged<double> onChanged;
 
@@ -462,6 +467,11 @@ class _EditorialSafeBandSlider extends StatelessWidget {
         ? ((rMax.clamp(min, max) - min) / span).clamp(0.0, 1.0)
         : 0.0;
     final inRange = !hasBand || (clamped >= rMin - 0.001 && clamped <= rMax + 0.001);
+    final valueStyle = StyleLoomTheme.monoStyle(
+      fontWeight: FontWeight.w700,
+      fontSize: 13.5,
+      color: inRange ? c.ink : c.warn,
+    );
 
     return _ParamBox(
       child: Column(
@@ -477,14 +487,18 @@ class _EditorialSafeBandSlider extends StatelessWidget {
                   b,
                   const SizedBox(width: 8),
                 ],
-                Text(
-                  _fmtNum(clamped),
-                  style: StyleLoomTheme.monoStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13.5,
-                    color: inRange ? c.ink : c.warn,
-                  ),
-                ),
+                if (editable)
+                  _GuidanceInput(
+                    key: ValueKey(field.key),
+                    field: field,
+                    value: clamped,
+                    min: min,
+                    max: max,
+                    style: valueStyle,
+                    onChanged: onChanged,
+                  )
+                else
+                  Text(_fmtNum(clamped), style: valueStyle),
               ],
             ),
           ),
@@ -577,6 +591,113 @@ class _EditorialSafeBandSlider extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GuidanceInput extends StatefulWidget {
+  const _GuidanceInput({
+    super.key,
+    required this.field,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.style,
+    required this.onChanged,
+  });
+
+  final ParamFieldDef field;
+  final double value;
+  final double min;
+  final double max;
+  final TextStyle style;
+  final ValueChanged<double> onChanged;
+
+  @override
+  State<_GuidanceInput> createState() => _GuidanceInputState();
+}
+
+class _GuidanceInputState extends State<_GuidanceInput> {
+  String _format(double value) => value.toString().replaceFirst(RegExp(r'\.0$'), '');
+
+  late final _controller = TextEditingController(text: _format(widget.value));
+  late final _focus = FocusNode()..addListener(_focusChanged);
+  bool _dirty = false;
+
+  double? get _draft {
+    final value = _asDouble(_controller.text);
+    return value != null && value >= widget.min && value <= widget.max ? value : null;
+  }
+
+  void _finish({bool cancel = false}) {
+    if (!_dirty) return;
+    final value = cancel ? widget.value : _draft ?? widget.value;
+    setState(() => _dirty = false);
+    _controller.text = _format(value);
+    if (value != widget.value) widget.onChanged(value);
+  }
+
+  void _focusChanged() {
+    if (!_focus.hasFocus) _finish();
+  }
+
+  @override
+  void didUpdateWidget(covariant _GuidanceInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value) {
+      _dirty = false;
+      _controller.text = _format(widget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 66,
+    child: CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          _finish(cancel: true);
+          _focus.unfocus();
+        },
+      },
+      child: Semantics(
+        label: widget.field.label,
+        child: TextField(
+          groupId: _focus,
+          controller: _controller,
+          focusNode: _focus,
+          selectAllOnFocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          textInputAction: TextInputAction.done,
+          textAlign: TextAlign.center,
+          style: widget.style,
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: EditorialColors.of(context).surface,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            errorText: _dirty && _draft == null ? '${_fmtNum(widget.min)}–${_fmtNum(widget.max)}' : null,
+          ),
+          onChanged: (_) => setState(() => _dirty = true),
+          onEditingComplete: () {
+            if (_draft != null) {
+              _finish();
+              _focus.unfocus();
+            }
+          },
+          onTapOutside: (_) {
+            _finish();
+            _focus.unfocus();
+          },
+        ),
+      ),
+    ),
+  );
 }
 
 class _EditorialThumbShape extends SliderComponentShape {

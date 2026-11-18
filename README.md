@@ -12,6 +12,7 @@ StyleLoom 是一款 AI 绘画素材管理工具。把参考图、画师串、正
 ## 功能
 
 - **画册** · 按模型保存配方和预览图，快速复制提示词。支持 NovelAI、ComfyUI 和 WebUI / Forge 等内置模型模板，也可自定义参数。
+- **底模参数** · 点击 NovelAI 的 `Prompt Guidance` 或 `Guidance Rescale` 数字即可输入精确值。拖动 `Guidance Rescale` 滑块时，每格调整 `0.1`。
 - **提示词片段** · 将常用提示词保存为可复用片段，在卡片中组合、排序和调权，也可切换到纯文本编辑或按目标平台的语法复制。
 - **原图解析** · 在本地查看图片里保存的生成参数。支持 PNG 文本及 Stealth 元数据、WebUI EXIF 和 ComfyUI 工作流 JSON。可在桌面拖入文件，或从 Android 的分享菜单打开图片。
 - **备份与同步** · 用 `.slpack` 文件备份或迁移全部或选中的卡片，也可通过 WebDAV 在设备间增量同步。

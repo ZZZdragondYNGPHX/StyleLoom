@@ -118,16 +118,24 @@ impl VaultDb {
 
     fn seed_builtin_schemas(&self) -> CoreResult<()> {
         for schema in builtin_schemas() {
-            let exists: Option<i64> = self
+            let needs_refresh: Option<bool> = self
                 .conn
                 .query_row(
-                    "SELECT deleted FROM schemas WHERE id = ?1",
-                    params![schema.id],
+                    "SELECT is_builtin AND NOT deleted AND updated_at < ?2 FROM schemas WHERE id = ?1",
+                    params![schema.id, schema.updated_at],
                     |r| r.get(0),
                 )
                 .optional()?;
-            if exists.is_none() {
-                self.upsert_schema_raw(&schema)?;
+            match needs_refresh {
+                None => self.upsert_schema_raw(&schema)?,
+                Some(true) => {
+                    self.conn.execute(
+                        "UPDATE schemas SET fields_json = ?3, updated_at = ?2
+                         WHERE id = ?1 AND is_builtin AND NOT deleted AND updated_at < ?2",
+                        params![schema.id, schema.updated_at, serde_json::to_string(&schema.fields)?],
+                    )?;
+                }
+                Some(false) => (),
             }
         }
         Ok(())

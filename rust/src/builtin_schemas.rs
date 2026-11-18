@@ -141,6 +141,7 @@ fn lora_list(hint: Option<&str>) -> ParamFieldDef {
 
 pub fn builtin_schemas() -> Vec<PlatformSchema> {
     let ts = 1_760_000_000_i64;
+    let nai_updated_at = 1_794_960_000_000;
     let nai_res = &["832x1216", "1216x832", "1024x1024", "768x1280"];
     let xl_res = &["832x1216", "1216x832", "1024x1024", "768x1344"];
     let nai_samplers = &["DPM++ 2M", "Euler_a", "Euler", "DPM++ 2S Ancestral", "DPM++ SDE"];
@@ -153,14 +154,14 @@ pub fn builtin_schemas() -> Vec<PlatformSchema> {
             model_name: "NovelAI Diffusion V5".into(),
             default_syntax: PromptSyntax::NaiColon,
             is_builtin: true,
-            updated_at: ts,
+            updated_at: nai_updated_at,
             deleted: false,
             fields: vec![
                 select_field("sampler", "采样器 (Sampler)", "DPM++ 2M", nai_samplers, None),
                 select_field("noise_schedule", "噪声调度器", "karras", nai_schedules, None),
                 stepper("steps", "步数 (Steps)", 28, 1.0, 50.0, Some(28.0), Some(35.0), Some("Opus 档标准尺寸 ≤28 步免 Anlas")),
                 slider("cfg", "Prompt Guidance", 5.5, 1.0, 10.0, 0.1, Some(5.0), Some(6.5), Some("V5 对高 Guidance 较敏感，推荐 5.0–6.5")),
-                slider("cfg_rescale", "Guidance Rescale", 0.0, 0.0, 1.0, 0.05, Some(0.0), Some(0.4), Some("高引导时防过曝/颜色过饱和")),
+                slider("cfg_rescale", "Guidance Rescale", 0.0, 0.0, 1.0, 0.1, Some(0.0), Some(0.4), Some("高引导时防过曝/颜色过饱和")),
                 resolution("832x1216", nai_res),
                 toggle("quality_toggle", "内置 Quality Tags", true, Some("开启时避免再堆砌重复 masterpiece")),
                 toggle("decrisper", "Decrisper", false, None),
@@ -175,7 +176,7 @@ pub fn builtin_schemas() -> Vec<PlatformSchema> {
             model_name: "NovelAI Diffusion V4.5".into(),
             default_syntax: PromptSyntax::NaiColon,
             is_builtin: true,
-            updated_at: ts,
+            updated_at: nai_updated_at,
             deleted: false,
             fields: vec![
                 select_field("variant", "数据集变体", "Full", &["Full", "Curated"], None),
@@ -183,7 +184,7 @@ pub fn builtin_schemas() -> Vec<PlatformSchema> {
                 select_field("noise_schedule", "噪声调度器", "karras", nai_schedules, None),
                 stepper("steps", "步数 (Steps)", 28, 1.0, 50.0, Some(25.0), Some(32.0), Some("Opus 档标准尺寸 ≤28 步免 Anlas")),
                 slider("cfg", "Prompt Guidance", 5.5, 1.0, 10.0, 0.1, Some(5.0), Some(6.5), None),
-                slider("cfg_rescale", "Guidance Rescale", 0.0, 0.0, 1.0, 0.05, Some(0.0), Some(0.4), None),
+                slider("cfg_rescale", "Guidance Rescale", 0.0, 0.0, 1.0, 0.1, Some(0.0), Some(0.4), None),
                 resolution("832x1216", nai_res),
                 toggle("quality_toggle", "内置 Quality Tags", true, None),
                 toggle("decrisper", "Decrisper", false, None),
@@ -198,14 +199,14 @@ pub fn builtin_schemas() -> Vec<PlatformSchema> {
             model_name: "NovelAI Diffusion V3".into(),
             default_syntax: PromptSyntax::NaiBraces,
             is_builtin: true,
-            updated_at: ts,
+            updated_at: nai_updated_at,
             deleted: false,
             fields: vec![
                 select_field("sampler", "采样器 (Sampler)", "Euler_a", nai_samplers, None),
                 select_field("noise_schedule", "噪声调度器", "native", nai_schedules, None),
                 stepper("steps", "步数 (Steps)", 28, 1.0, 50.0, Some(23.0), Some(28.0), None),
                 slider("cfg", "Prompt Guidance", 5.5, 1.0, 11.0, 0.1, Some(5.0), Some(7.0), None),
-                slider("cfg_rescale", "Guidance Rescale", 0.0, 0.0, 1.0, 0.05, None, None, None),
+                slider("cfg_rescale", "Guidance Rescale", 0.0, 0.0, 1.0, 0.1, None, None, None),
                 resolution("832x1216", nai_res),
                 toggle("quality_toggle", "内置 Quality Tags", true, None),
                 toggle("decrisper", "Decrisper", false, None),
